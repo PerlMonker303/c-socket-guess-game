@@ -95,7 +95,7 @@ int main(int argc, char* argv[]){
 		if(bytes_sent < 0){
 			break;
 		}
-		printf("Sent\n");
+		//printf("Sent\n");
 		
 		// Receive a result
 		bytes_read = recv(sockfd, &resp, sizeof(int), 0);
@@ -111,9 +111,9 @@ int main(int argc, char* argv[]){
 			break;
 		}
 		if(resp == 2){ // HIGHER
-		
+			printf("Higher\n");
 		}else if(resp == 3){ // LOWER
-			
+			printf("Lower\n");
 		}
 	}
 	printf("---Game ended---\n");

@@ -39,7 +39,7 @@ void handle_player(int* pipe, char* player, int sockfd){
 			write(pipe[1], &result, sizeof(int));
 			bytes_send = send(sockfd, &result, sizeof(int), 0);
 			break;
-		}else if(guess < letter){
+		}else if(guess > letter){
 			// Write the client to go HIGHER
 			result = 2; // HIGHER
 			bytes_send = send(sockfd, &result, sizeof(int), 0);
@@ -56,10 +56,10 @@ void handle_player(int* pipe, char* player, int sockfd){
 		}
 		
 		// Read response from parent (1 - continue, 0 - stop
-		read(pipe[0], &result, sizeof(int));
-		if(result == 0){
-			break;
-		}
+		//read(pipe[0], &result, sizeof(int));
+		//if(result == 0){
+			//break;
+		//}
 	}
 	
 	close(pipe[0]); // Closing the reading end
@@ -120,7 +120,7 @@ int main(){
 		bytes_read = recv(sockfd_new, players[players_count], name_length, 0); // then read the actual name
 		sockfd_news[players_count] = sockfd_new;
 		
-		printf("Player %s joined the game, address: %s:%d \n", players[players_count], ip_incoming, port_incoming);
+		printf("%d/%d Player %s joined the game, address: %s:%d \n", players_count+1, BACKLOG, players[players_count], ip_incoming, port_incoming);
 		
 		// Create a new process to handle the current player
 		pipe(pipes[players_count]); // Creating a pipe for the parent process to communicate with the child process
@@ -170,9 +170,9 @@ int main(){
 			}
 			
 			// Writing status to child (finished = 1 - game over, 0 - continue)
-			if(write(pipes[i][1], &finished, sizeof(int)) < 0){
-				finished = 1;
-			}
+			//if(write(pipes[i][1], &finished, sizeof(int)) < 0){
+				//finished = 1;
+			//}
 			
 		}
 		if(resp == 1){
