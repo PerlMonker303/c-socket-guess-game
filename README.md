@@ -1,2 +1,2 @@
 # py-sockets-chat-app
-Read the title
+Read the description
