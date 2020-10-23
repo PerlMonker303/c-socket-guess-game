@@ -1,2 +1,2 @@
-# c-socket-guess-game
-Multiplayer guessing game using c sockets and processes
+# py-sockets-chat-app
+Read the title
