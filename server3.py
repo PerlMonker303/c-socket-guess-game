@@ -14,7 +14,8 @@ import select
 
 BACKLOG = 5
 usernames = list()
-addresses = list() # addresses of registered clients
+addresses_server = list() # addresses of registered clients for server
+addresses_clients = list() # addresses of registered clients for other clients
 sockets = list()
 
 myLock = threading.Lock()
@@ -36,18 +37,18 @@ def alertClients(code, current_socket, addrc, username):
     # get info about current client
     sz = len(addrc[0]) # len of ip
     sz_packed = struct.pack('!H',sz)
-    print('AC_sz=',sz)
+    #print('AC_sz=',sz)
     ip_bytes = bytes(addrc[0], 'ascii') # ip
-    print('AC_ip=',addrc[0])
+    #print('AC_ip=',addrc[0])
     port = addrc[1] # port
     port_packed = struct.pack('!H',port)
-    print('AC_port=',port)
+    #print('AC_port=',port)
     sz_user = len(username) # len of username
     sz_user_packed = struct.pack('!H',sz_user)
     username_bytes = bytes(username, 'ascii') # username
-    print('AC_sz_user=',sz_user)
-    print('AC_username=',username)
-    print('AC_CODE=',code)
+    #print('AC_sz_user=',sz_user)
+    #print('AC_username=',username)
+    #print('AC_CODE=',code)
     if code == 1: # new client      
         # send info to all other clients
         for socket in sockets:
@@ -74,6 +75,7 @@ def alertClients(code, current_socket, addrc, username):
 def handleClientsRequests():
     # waits for any client to reach the server with a special command
     # for now only disconnecting works
+    # Note: when messages are sent 
     rlist = sockets.copy()
     wlist = list()
     xlist = list()
@@ -81,69 +83,56 @@ def handleClientsRequests():
     while sockets.__len__() > 0:
         (rlistOut,wlistOut,xlistOut) = select.select(rlist,wlist,xlist)
         print('T_Woke up')
-        print(addresses)
-        if len(addresses) == 0: # nothing to do here
+        print(rlistOut)
+        if len(addresses_server) == 0: # nothing to do here
             break
         for r in rlistOut: # we might get more requests at the same time
             #print('T_Before pop:',rlistOut)
             s_new = r
             rlistOut.pop(0)
+            print('-+-',s_new.getpeername())
+            print('-+-',addresses_server)
+            # why does this wake up when I simply communicate withing
+            # clients
+            if s_new.getpeername() not in addresses_server:
+                rlist.clear()
+                break
             #print('T_After pop:',rlistOut)
             #print('T_s_new:',s_new)
-
+            print('POINT1')
             # read code
             code_packed = s_new.recv(2)
             if code_packed == b'':
                 continue
             code = struct.unpack('!H', code_packed)[0]
-            #print('T_RECEIVED CODE FOR DISCONNECT')
             if code == 2:
                 # unsubscribe this user
                 pos = sockets.index(s_new)
                 sockets.remove(s_new)
                 username = usernames[pos]
                 usernames.remove(username)
-                addrc = addresses[pos]
-                addresses.remove(addrc)
+                addrc = addresses_server[pos]
+                addresses_server.remove(addrc)
+                addrc_client = addresses_clients[pos]
+                addresses_clients.remove(addrc_client)
                 # send confirmation
                 code_conf = 1 # okay
                 code_packed = struct.pack('!H',code_conf)
                 s_new.send(code_packed)
                 # alert other clients
-                alertClients(code, s_new, addrc, username)
-
+                alertClients(code, s_new, addrc_client, username)
+            if code == 4:
+                print('T_CODE=4')
+                continue
             else:
                 print('T_Invalid code - skipping')
+                rlist = list()
 
-        print(addresses)
+        print(addresses_server)
+        print(addresses_clients)
         print(usernames)
 
         rlist = sockets.copy()
-
-    '''
-
-    myLock.acquire(blocking=True) # acquire the lock
-    if not sockets.__contains__(s_client):
-        sockets.append(s_client)
-    myLock.release() # release the lock
-
-    # alert other clients of this new client
-    alertClients(s_client, addrc)
-
-    #while 1:
-    resp_bytes = s_client.recv(2) # this should not given an error - just wait
-    resp = struct.unpack('!H', resp_bytes)[0]
-    print(resp)
-    if resp == 1:
-        usr_len_packed = s_client.recv(2)
-        usr_len = struct.unpack('!H', usr_len_packed)[0]
-        print('len:',usr_len)
-        username_bytes = s_client.recv(usr_len)
-        username = username_bytes.decode('ascii')
-        print('username:',username)
-
-    print("Done")
-    '''
 
 if __name__ == "__main__":    
     # create socket
@@ -182,10 +171,17 @@ if __name__ == "__main__":
             else:
                 # store new username
                 usernames.append(username)
-                # store the user's address
-                addresses.append(addrc)
+                # store the user's address to talk to the server
+                addresses_server.append(addrc)
                 # store the user's socket
                 sockets.append(s_new)
+
+                # read the socket of the new user
+                port_sock_packed = s_new.recv(2)
+                port_sock = struct.unpack('!H',port_sock_packed)[0]
+                # store the user's address
+                addrc_current = (addrc[0],port_sock)
+                addresses_clients.append(addrc_current)
                 # code 1 - success
                 code = 1
                 
@@ -197,12 +193,12 @@ if __name__ == "__main__":
             # all connected users
             if code == 1:
                 # send the number of addresses
-                no_addrc = len(addresses)-1
+                no_addrc = len(addresses_clients)-1
                 no_addrc_packed = struct.pack('!H', no_addrc)
                 s_new.send(no_addrc_packed)
                 # send the addresses
-                for addr in addresses:
-                    if addr != addrc: # not the current client
+                for addr in addresses_clients:
+                    if addr != addrc_current: # not the current client
                         print(addr)
                         # send the ip size
                         sz = len(addr[0])
@@ -215,7 +211,7 @@ if __name__ == "__main__":
                         port_packed = struct.pack('!H',addr[1])
                         s_new.send(port_packed)
                         # send the username length
-                        pos = addresses.index(addr)
+                        pos = addresses_clients.index(addr)
                         username_cur = usernames[pos]
                         sz = len(username_cur)
                         sz_packed = struct.pack('!H',sz)
@@ -225,8 +221,7 @@ if __name__ == "__main__":
                         s_new.send(username_bytes)
 
                 # alert existing clients of this new client
-                print('---',username)
-                alertClients(code,s_new,addrc,username)
+                alertClients(code,s_new,addrc_current,username)
 
                 # create a thread to use for registered clients
                 # THERE SHOULD ONLY BE ONE THREAD TO LISTEN FOR CLIENTS COMMANDS
@@ -236,12 +231,14 @@ if __name__ == "__main__":
 
         elif resp == 2:
             # check if user is stored (however he should be)
-            if addresses.__contains__(addrc):
+            if addresses_server.__contains__(addrc):
                 code = 2 # error code
                 print('M_User',addrc,'not registered. Failed to remove.')
             else:
                 # delete the user
-                addresses.remove(addrc)
+                pos = addresses_server.index(addrc)
+                addresses_server.remove(addrc)
+                addresses_clients.remove(addresses_clients[pos])
                 usernames.remove(username)
                 code = 1
             # send response back
@@ -250,7 +247,8 @@ if __name__ == "__main__":
         else:
             print('M_Invalid code given by client ',addrc)
 
-        print('M_Addresses:',addresses)
+        print('M_Addresses_Server:',addresses_server)
+        print('M_Addresses_Clients:',addresses_clients)
         print('M_Usernames:',usernames)
 
     # close server socket

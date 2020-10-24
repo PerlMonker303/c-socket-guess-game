@@ -22,42 +22,69 @@ username_glb = ""
 s = 0 # socket of the client
 disconnect_time = 5 # 5 seconds for disconnect
 disconnecting = 0
-
-#myLock = threading.Lock()
+socket_com = 0 # communication socket UDP
 
 def sendMessage(msg):
     if len(msg) > MAX_MSG_LEN:
         print('Message is too long (max',MAX_MSG_LEN,')')
         return
+    print('Sending message to users', addresses)
     for addrc in addresses:
+        # send code = 4 (message)
+        code = 4
+        code_packed = struct.pack('!H',code)
+        s.sendto(code_packed, addrc)
         # send length of username
         sz = len(username_glb) 
-        print('Sending username length',sz)
         sz_packed = struct.pack('!H',sz)
         s.sendto(sz_packed, addrc)
         # send username
-        print('Sending username',username_glb)
         username_bytes = bytes(username_glb,'ascii')
         s.sendto(username_bytes, addrc) 
         # send length of message
         sz = len(msg)
-        print('Sending message length',sz)
         sz_packed = struct.pack('!H',sz)
         s.sendto(sz_packed, addrc)
         # send message
-        print('Sending message',msg)
         msg_bytes = bytes(msg, 'ascii')
         s.sendto(msg_bytes, addrc)
+        print('Sent')
 
 def handleReceiveMessage():
-    # WORK HERE ...
+    # thread that takes care of incoming messages from other users
     rlist = list()
     wlist = list()
     xlist = list()
     while 1:
-        #(rlistOut,wlistOut,xlistOut) = select(rlist,wlist,xlist)
-        pass
-
+        try:
+            (rlistOut,wlistOut,xlistOut) = select(rlist,wlist,xlist)
+        except:
+            break
+        if len(rlistOut) == 0 or disconnecting == 1:
+            continue
+        print('HRM_woke up')
+        # read it from rlistOut
+        socket = rlistOut.pop(0)
+        # read code
+        (code_packed, addr_sender) = socket.recvfrom(2)
+        code = struct.unpack('!H', code_packed)
+        if code != 4:
+            print('CODE NOT 4')
+            continue
+        # read length of username
+        (sz_packed, addr_sender) = socket.recvfrom(2)
+        sz = struct.unpack(sz_packed)
+        # read username
+        (username_sender_bytes, addr_sender) = socket.recvfrom(sz)
+        username_sender = bytes(username_sender_bytes, 'ascii')
+        # read length of message
+        (sz_packed, addr_sender) = socket.recvfrom(2)
+        sz = struct.unpack(sz_packed)
+        # read message
+        (message_bytes, addr_sender) = socket.recvfrom(sz)
+        message = bytes(message_bytes, 'ascii')
+        print(username_sender,':',message)
+        print('>',end='',flush=True)
 
 def handleServer():
     # wait for server to send new client or remove a client
@@ -75,28 +102,31 @@ def handleServer():
         if len(rlistOut) == 0 or disconnecting == 1:
             continue
         print('Woke up')
-        print(rlistOut)
+        #print(rlistOut)
         sc = rlistOut.pop(0)
         code_packed = sc.recv(2)
-        code = struct.unpack('!H',code_packed)[0]
+        try:
+            code = struct.unpack('!H',code_packed)[0]
+        except:
+            print('SERVER FAILURE')
         if code == 1:
             # new user
             # receive ip length
             sz_packed = sc.recv(2)
             sz = struct.unpack('!H',sz_packed)[0]
-            print('iplen=',sz)
+            #print('iplen=',sz)
             # receive ip
             ip_bytes = sc.recv(sz)
             ip = ip_bytes.decode('ascii')
-            print('ip=',ip)
+            #print('ip=',ip)
             # receive port
             port_packed = sc.recv(2)
             port = struct.unpack('!H',port_packed)[0]
-            print('port=',port)
+            #print('port=',port)
             # receive username's length
             sz_packed = sc.recv(2)
             sz = struct.unpack('!H',sz_packed)[0]
-            print('usrlen=',sz)
+            #print('usrlen=',sz)
             # receive username
             username_bytes = sc.recv(sz)
             username = username_bytes.decode('ascii')
@@ -116,19 +146,19 @@ def handleServer():
             # receive ip length
             sz_packed = sc.recv(2)
             sz = struct.unpack('!H',sz_packed)[0]
-            print('iplen=',sz)
+            #print('iplen=',sz)
             # receive ip
             ip_bytes = sc.recv(sz)
             ip = ip_bytes.decode('ascii')
-            print('ip=',ip)
+            #print('ip=',ip)
             # receive port
             port_packed = sc.recv(2)
             port = struct.unpack('!H',port_packed)[0]
-            print('port=',port)
+            #print('port=',port)
             # receive username's length
             sz_packed = sc.recv(2)
             sz = struct.unpack('!H',sz_packed)[0]
-            print('usrlen=',sz)
+            #print('usrlen=',sz)
             # receive username
             username_bytes = sc.recv(sz)
             username = username_bytes.decode('ascii')
@@ -145,6 +175,7 @@ def handleServer():
             print(usernames)
             print('>',end='',flush=True)
         else:
+            print(code)
             print('Invalid code: handleServer')
 
 
@@ -169,8 +200,8 @@ if __name__ == "__main__":
         print("Error: ",msg.strerror)
         exit(-1)
 
-    # send username
-    code = 1 # code for registration
+    # send code for registration
+    code = 1
     code_packed = struct.pack('!H', code)
     s.send(code_packed)
     # send length
@@ -181,27 +212,35 @@ if __name__ == "__main__":
     username_bytes = bytes(username, 'ascii')
     s.send(username_bytes)
 
+    # create a new UDP socket for client communication
+    socket_com = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    socket_com.bind(('0.0.0.0',0))
+
+    # send the port of the new socket
+    print('MY SOCKET PORT TO SERVER:',s.getsockname())
+    print('MY SOCKET PORT TO CLIENTS:',socket_com.getsockname())
+    port_sock = socket_com.getsockname()[1]
+    port_sock_packed = struct.pack('!H',port_sock)
+    s.send(port_sock_packed)
+
     # wait for response
     resp_packed = s.recv(2)
     resp = struct.unpack('!H', resp_packed)[0]
+    print('Response:',resp)
     if resp == 1:
         # receive the no of addresses (clients) already registered
         no_addrc_packed = s.recv(2)
         no_addrc = struct.unpack('!H',no_addrc_packed)[0]
-        print('no_addrc=',no_addrc)
         for i in range(0,no_addrc):
             # receive the size of ip
             sz_packed = s.recv(2)
             sz = struct.unpack('!H',sz_packed)[0]
-            print('sz=',sz)
             # receive the ip
             ip_bytes = s.recv(sz)
             ip = ip_bytes.decode('ascii')
-            print('ip=',ip)
             # receive the port
             port_packed = s.recv(2)
             port = struct.unpack('!H',port_packed)[0]
-            print('port=',port)
             # receive the username length
             sz_packed = s.recv(2)
             sz = struct.unpack('!H',sz_packed)[0]
@@ -226,6 +265,10 @@ if __name__ == "__main__":
     t = threading.Thread(target=handleServer)
     t.start()
 
+    # create thread to listen for messages
+    t_messages = threading.Thread(target=handleReceiveMessage)
+    t_messages.start()
+
     # stay connected - send messages
     while 1:
         inp = str(input('>'))
@@ -249,7 +292,9 @@ if __name__ == "__main__":
             if code == 1:
                 print('Disconnecting from server ... (eta: <',disconnect_time,'seconds)')
                 s.close()
+                socket_com.close()
                 t.join()
+                t_messages.join()
                 print('Disconnected. Goodbye!')
                 sys.exit()
             else:
